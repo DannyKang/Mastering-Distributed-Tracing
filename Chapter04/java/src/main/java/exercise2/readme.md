@@ -1,0 +1,86 @@
+## Exercise 2 : The First Trace
+
+이제 샘플 애플리케이션과 익숙해졌으니 가장 기본적인 Trace를 아래와 같이 3단계로 진행한다. 
+
+ 1. [`Tracer` 인스터스 생성](#Step 1 : `Tracer` 인스턴스 생성)
+ 2. HTTP handler에서 `Span` start
+ 3. 코드내에서 추가적인 정보를 `Span`에 추가
+
+
+ ### Step 1 : `Tracer` 인스턴스 생성
+
+OpenTracing은 단지 API로 실제 Tracer의 인스턴스를 추가해야 한다. 이번 예제에서는 Jaeger tracer를 사용할 것이지만 OpenTracing-compatable한 tracer(ex Zipkin tracer)로 대체해도 무방하다.  
+
+Tracer는 주로 singleton으로 사용되면 애플리케이션 하나다 하나으 tracer를 사용한다. (그러나 Service Mesh와 같은 경우는 여러개의 tracer가 필요하기도 한다.) tracer의 구현은 언어와 framework마다 다르다. OpenTracing API 라이브러리는 global variable를 이용해서 global tracer를 정의하는 메커니즘을 제공하지만 dependency injection를 통해서 정의할 수도 있다. 
+
+프로그래밍 언어별로 제공되는 Jaeger Library는 Configuration Class가 제공되어 Tracer의 Builder역할을 한다. 이 builder는 `Production-ready"한 tracer를 기본적으로 제공하며, 1000번에 1번 sampling을 하도록 되어 있다. 그러나 예제에서는 모든 trace를 sampling할것 이기 때문에 Configuration Class를 "const"로 파라메터를 "param=1"로 설정한다. 
+
+>그리고 Jaeger BackEnd에서 Service Instance를 구별하기 위해서 **Server Name**을 제공해야 하는데 이 예제에서는 **"java-2-hello"** 라고 이름지었다.
+> {language}-{exercise number}-{microservice name}
+
+```java
+// Bean으로 설정해서 어디서든 Dependency Injection으로 Tracer를 사용 가능
+    @Bean
+    public io.opentracing.Tracer initTracer() {
+        SamplerConfiguration samplerConfig = new SamplerConfiguration().withType("const").withParam(1);
+        return new Configuration("java-2-hello").withSampler(samplerConfig).withReporter(reporterConfig).getTracer();
+```
+
+ ### Step 2 : `Span` start 
+
+ 프로그램에서 tracing을 시작하려면 적어도 하나 이상의 `span`을 생성해야 한다.  첫번째 span을 만들게 되면 tracer 내부에서는 unique trace ID를 생성하고 sampling 전략에 따라서 현재 실행중인 trace를 sampling할지 여부를 판단한다. sampling하기 걸정되면 같은 trace의 모든 span은 이 첫번째 span의 자식 span이 되며 이 첫번째 span을 **root span**이라 부른다. 
+
+***sampling을 안하기로 결정하는 경우에도 traceID와 spanID를 propagate한다. (p106,  more in Chapter 8)***
+
+각각의 HTTP Request등 Trace를 만들게 되며 span을 시작할때 적절한 이름(OpenTracing에서는 "Operation Name"이라 한다. 을 주어야 이후 분석햐는데 도움이 된다. 예를 들어 Java에 "/sayHello/{name}"와 같이 path variable을 이용하는 경우  operation name을 실제 이름, 즉 /sayHello/Margo 라 할때 "Margo"로 주게 되면 service 조회할때 사용자 이름 만큼 따로 조회를 해야 한다. 이렇게 되면 나중에 latency profile을 한다거나 할때 굉장히 여럽게 된다. 
+
+그리고 span은 timstamp를 가지는, 시작과 끝이 있는, unit of work으로 start()로 시작했으면 꼭 Finish() method를 호출해야 Tracing Backend에 report가 날아간다. 물론 어떤 tracer구현체는 unfinished span정보를 report하는 기능이 있는 경우도 있지만 바람직스럽지 않은 방법으로, OpenTracing에서는 명시적으로 Finish() 메소드를 호출하도록 하고 있다. 
+
+
+> Java OpenTracing API는 Builder Pattern을 사용해 span을 생성.
+> start()와 span.finish()
+```java
+@GetMapping("/sayHello/{name}")
+public String sayHello(@PathVariable String name) {
+    Span span = tracer.buildSpan("say-hello").start();
+    try {
+        ...
+        return response;
+    } finally {
+        span.finish();
+    }
+}
+
+```
+
+ ### Step 3 : 코드내에서 추가적인 정보를 `Span`에 추가
+ 현재까지의 코드로도 Jaeger UI에서 여러 정보를 볼 수 있다.
+ Service Name, Operation name, Latency 와 Jaeger가 자동으로 추가한 tags와 sampling strategy, process information등의 정보롤 볼 수 있다.
+
+ 그러나 좀 더 분석을 유용하게 하기 위해서 다양한 정보를 추가해서 남길 수 있다. 
+ 
+ OpenTracing API에서는 두가지 기능으로 추가적인 Custom information을 span에 남길 수 있는데 "tags"와 "logs"이다.
+  - tags는 key value로 trace data를 filter하거나 query하는데 사용할 수 있다. 대표적으로 HTTP method의 verb를 저장하는게 좋은 예이다. 
+  - logs 기존의 log와 마찬가지로 필요한 정보를 담을 수 있으며, nested key value pair를 담을 수 있다. 
+
+```java
+@GetMapping("/sayHello/{name}")
+public String sayHello(@PathVariable String name) {
+    Span span = tracer.buildSpan("say-hello").start();
+    try {
+        Person person = getPerson(name);
+        Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("name", person.getName());
+            fields.put("title", person.getTitle());
+            fields.put("description", person.getDescription());
+        span.log(fields);
+        String response = formatGreeting(person);
+            span.setTag("response", response);  
+            return response;
+        } finally {
+            span.finish();
+        }
+    }
+```
+
+
