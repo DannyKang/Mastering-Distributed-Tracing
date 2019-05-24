@@ -2,9 +2,9 @@
 
 이제 샘플 애플리케이션과 익숙해졌으니 가장 기본적인 Trace를 아래와 같이 3단계로 진행한다. 
 
- 1. [`Tracer` 인스터스 생성](#Step 1 : `Tracer` 인스턴스 생성)
- 2. HTTP handler에서 `Span` start
- 3. 코드내에서 추가적인 정보를 `Span`에 추가
+ 1. [`Tracer` 인스터스 생성](#step-1--tracer-인스턴스-생성)
+ 2. [HTTP handler에서 `Span` start](#step-2--span-start)
+ 3. [코드내에서 추가적인 정보를 `Span`에 추가](#step-3--코드내에서-추가적인-정보를-Span에-추가)
 
 
  ### Step 1 : `Tracer` 인스턴스 생성
@@ -20,10 +20,24 @@ Tracer는 주로 singleton으로 사용되면 애플리케이션 하나다 하�
 
 ```java
 // Bean으로 설정해서 어디서든 Dependency Injection으로 Tracer를 사용 가능
+// HelloApp.java
+import org.springframework.context.annotation.Bean;
+
+import io.jaegertracing.Configuration;
+import io.jaegertracing.Configuration.ReporterConfiguration;
+import io.jaegertracing.Configuration.SamplerConfiguration;
+
+@EnableJpaRepositories("lib.people") 
+@EntityScan("lib.people")
+@SpringBootApplication
+public class HelloApp {
+
     @Bean
     public io.opentracing.Tracer initTracer() {
         SamplerConfiguration samplerConfig = new SamplerConfiguration().withType("const").withParam(1);
+        ReporterConfiguration reporterConfig = new ReporterConfiguration().withLogSpans(true);
         return new Configuration("java-2-hello").withSampler(samplerConfig).withReporter(reporterConfig).getTracer();
+    }
 ```
 
  ### Step 2 : `Span` start 
@@ -40,11 +54,23 @@ Tracer는 주로 singleton으로 사용되면 애플리케이션 하나다 하�
 > Java OpenTracing API는 Builder Pattern을 사용해 span을 생성.
 > start()와 span.finish()
 ```java
+//HelloController.java
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import io.opentracing.Span;
+import io.opentracing.Tracer;
+
+
+@Autowired
+private Tracer tracer;
+
 @GetMapping("/sayHello/{name}")
 public String sayHello(@PathVariable String name) {
     Span span = tracer.buildSpan("say-hello").start();
     try {
-        ...
+        Person person = getPerson(name);
+        String response = formatGreeting(person);
         return response;
     } finally {
         span.finish();
@@ -55,6 +81,29 @@ public String sayHello(@PathVariable String name) {
 
  ### Step 3 : 코드내에서 추가적인 정보를 `Span`에 추가
  현재까지의 코드로도 Jaeger UI에서 여러 정보를 볼 수 있다.
+
+```bash
+# Spring Boot 실행
+$ ./mvnw spring-boot:run -Dmain.class=exercise1.HelloApp
+
+# Jaeger 실행
+$docker run -d --name jaeger \
+-p 6831:6831/udp \
+-p 16686:16686 \
+-p 14268:14268 \
+jaegertracing/all-in-one:1.6
+
+# 이전에 실행한적이 있다면 
+$docker start jaeger
+
+# sayHello 호출
+$ curl http://localhost:8080/sayHello/Gru
+
+```
+
+![](../../resources/images/ch04-ex02-jaejer-ui.png)
+
+
  Service Name, Operation name, Latency 와 Jaeger가 자동으로 추가한 tags와 sampling strategy, process information등의 정보롤 볼 수 있다.
 
  그러나 좀 더 분석을 유용하게 하기 위해서 다양한 정보를 추가해서 남길 수 있다. 
@@ -73,8 +122,9 @@ public String sayHello(@PathVariable String name) {
             fields.put("name", person.getName());
             fields.put("title", person.getTitle());
             fields.put("description", person.getDescription());
-        span.log(fields);
-        String response = formatGreeting(person);
+            span.log(fields);
+
+            String response = formatGreeting(person);
             span.setTag("response", response);  
             return response;
         } finally {
@@ -82,5 +132,6 @@ public String sayHello(@PathVariable String name) {
         }
     }
 ```
+![](../../resources/images/ch04-ex02-jaejer-ui-2.png)
 
 

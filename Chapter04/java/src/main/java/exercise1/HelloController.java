@@ -33,13 +33,15 @@ public class HelloController {
 
     private String formatGreeting(Person person) {
         String response = "Hello, ";
+//        System.out.println(person.getName());
         if (!person.getTitle().isEmpty()) {
             response += person.getTitle() + " ";
         }
         response += person.getName() + "!";
-        if (!person.getDescription().isEmpty()) {
+      if (!person.getDescription().isEmpty()) {    
             response += " " + person.getDescription();
         }
         return response;
     }
+
 }

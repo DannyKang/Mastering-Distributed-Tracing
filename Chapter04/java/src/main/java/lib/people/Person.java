@@ -21,6 +21,8 @@ public class Person {
 
     public Person(String name) {
         this.name = name;
+        this.title="";
+        this.description="";
     }
 
     /**
