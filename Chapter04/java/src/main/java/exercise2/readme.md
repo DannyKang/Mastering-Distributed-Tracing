@@ -9,17 +9,19 @@
 
  ### Step 1 : `Tracer` 인스턴스 생성
 
-OpenTracing은 단지 API로 실제 Tracer의 인스턴스를 추가해야 한다. 이번 예제에서는 Jaeger tracer를 사용할 것이지만 OpenTracing-compatable한 tracer(ex Zipkin tracer)로 대체해도 무방하다.  
+OpenTracing은 API를 정의해 놓은 Spec이며, Tracing을 위해서는 실제 Tracer의 인스턴스를 추가해야 한다. 이번 예제에서는 Jaeger tracer를 사용할 것이며, OpenTracing-compatable한 다른 tracer(ex Zipkin tracer)로 대체해도 무방하다.  
 
-Tracer는 주로 singleton으로 사용되면 애플리케이션 하나다 하나으 tracer를 사용한다. (그러나 Service Mesh와 같은 경우는 여러개의 tracer가 필요하기도 한다.) tracer의 구현은 언어와 framework마다 다르다. OpenTracing API 라이브러리는 global variable를 이용해서 global tracer를 정의하는 메커니즘을 제공하지만 dependency injection를 통해서 정의할 수도 있다. 
+Tracer는 주로 singleton으로 사용되면 애플리케이션 하나다 하나의 tracer를 사용한다. (그러나 Service Mesh와 같은 경우는 여러개의 tracer가 필요하기도 한다.) tracer의 구현은 개발언어와 framework 별로 서로 다르게 구현되어 있다. OpenTracing API 라이브러리는 global variable를 이용해서 global tracer를 정의하는 메커니즘을 제공하지만 dependency injection를 통해서 정의할 수도 있다. 
 
-프로그래밍 언어별로 제공되는 Jaeger Library는 Configuration Class가 제공되어 Tracer의 Builder역할을 한다. 이 builder는 `Production-ready"한 tracer를 기본적으로 제공하며, 1000번에 1번 sampling을 하도록 되어 있다. 그러나 예제에서는 모든 trace를 sampling할것 이기 때문에 Configuration Class를 "const"로 파라메터를 "param=1"로 설정한다. 
+프로그래밍 언어별로 제공되는 Jaeger Library(Go, Java, Node.js, Python, C++, C#)는 Configuration Class가 제공되어 Tracer의 Builder역할을 한다. 이 builder는 `Production-ready"한 tracer를 기본적으로 제공하며, 1000번에 1번꼴로 sampling을 하도록 되어 있다. 그러나 예제에서는 Request가 적어서 모든 trace를 sampling할것 이기 때문에 Configuration Class를 "const"로 파라메터를 "param=1"로 설정한다.  
+***Type of sampler (remote (default), ratelimiting, probabilistic, const)***  
+참조 : https://github.com/jaegertracing/jaeger-client-java/blob/master/jaeger-core/src/main/java/io/jaegertracing/Configuration.java
 
 >그리고 Jaeger BackEnd에서 Service Instance를 구별하기 위해서 **Server Name**을 제공해야 하는데 이 예제에서는 **"java-2-hello"** 라고 이름지었다.
 > {language}-{exercise number}-{microservice name}
 
 ```java
-// Bean으로 설정해서 어디서든 Dependency Injection으로 Tracer를 사용 가능
+// Tracer를 Bean으로 설정, Dependency Injection으로 Tracer를 사용 가능
 // HelloApp.java
 import org.springframework.context.annotation.Bean;
 
@@ -42,13 +44,16 @@ public class HelloApp {
 
  ### Step 2 : `Span` start 
 
- 프로그램에서 tracing을 시작하려면 적어도 하나 이상의 `span`을 생성해야 한다.  첫번째 span을 만들게 되면 tracer 내부에서는 unique trace ID를 생성하고 sampling 전략에 따라서 현재 실행중인 trace를 sampling할지 여부를 판단한다. sampling하기 걸정되면 같은 trace의 모든 span은 이 첫번째 span의 자식 span이 되며 이 첫번째 span을 **root span**이라 부른다. 
+ 프로그램에서 tracing을 시작하려면 적어도 하나 이상의 `span`을 생성해야 한다. 첫번째 span을 만들게 되면 tracer 내부에서는 unique trace ID를 생성하고 sampling 전략에 따라서 현재 실행중인 trace를 sampling할지 여부를 판단한다. sampling을 하기로 걸정되면 같은 trace의 모든 span은 이 첫번째 span의 자식 span이 되며 이 첫번째 span을 **root span**이라 부른다. 
 
 ***sampling을 안하기로 결정하는 경우에도 traceID와 spanID를 propagate한다. (p106,  more in Chapter 8)***
 
-각각의 HTTP Request등 Trace를 만들게 되며 span을 시작할때 적절한 이름(OpenTracing에서는 "Operation Name"이라 한다. 을 주어야 이후 분석햐는데 도움이 된다. 예를 들어 Java에 "/sayHello/{name}"와 같이 path variable을 이용하는 경우  operation name을 실제 이름, 즉 /sayHello/Margo 라 할때 "Margo"로 주게 되면 service 조회할때 사용자 이름 만큼 따로 조회를 해야 한다. 이렇게 되면 나중에 latency profile을 한다거나 할때 굉장히 여럽게 된다. 
+각각의 HTTP Request마다 새로운 Trace를 만들게 되며, span을 시작할때 적절한 이름(OpenTracing에서는 "Operation Name"이라 한다.) 을 주어야 이후 분석하는데 도움이 된다. 예를 들어 Java에 "/sayHello/{name}"와 같이 path variable을 이용하는 경우, operation name을 `{name}`으로 주게 되면 나중에 사용자 이름별로 조회를 해야 해서 나중에 latency profile을 한다거나 할때 굉장히 어럽게 된다. 
 
-그리고 span은 timstamp를 가지는, 시작과 끝이 있는, unit of work으로 start()로 시작했으면 꼭 Finish() method를 호출해야 Tracing Backend에 report가 날아간다. 물론 어떤 tracer구현체는 unfinished span정보를 report하는 기능이 있는 경우도 있지만 바람직스럽지 않은 방법으로, OpenTracing에서는 명시적으로 Finish() 메소드를 호출하도록 하고 있다. 
+![](../../resources/images/ch04-ex02-operation.png)
+
+
+그리고 span은 작업 단위로(unit of work), 시작 시간과 끝나는 시간(timestamp)이 기록되며, `start()`로 시작해서 종료될때는 꼭 `Finish()` method를 명시적으로 호출해야 한다. Finish()를 하는 순간 내부 메커니즘(Batch)에 의해서 Tracing Backend에 report가 날아간다. 물론 일부 tracer구현체는 unfinished span정보를 report하는 기능이 있는 경우도 있지만 바람직스럽지 않은 방법이며, OpenTracing에서는 명시적으로 Finish() 메소드를 호출하도록 하고 있다. 
 
 
 > Java OpenTracing API는 Builder Pattern을 사용해 span을 생성.
@@ -60,7 +65,6 @@ import java.util.Map;
 
 import io.opentracing.Span;
 import io.opentracing.Tracer;
-
 
 @Autowired
 private Tracer tracer;
@@ -84,7 +88,7 @@ public String sayHello(@PathVariable String name) {
 
 ```bash
 # Spring Boot 실행
-$ ./mvnw spring-boot:run -Dmain.class=exercise1.HelloApp
+$ ./mvnw spring-boot:run -Dmain.class=exercise2.HelloApp
 
 # Jaeger 실행
 $docker run -d --name jaeger \
@@ -95,6 +99,9 @@ jaegertracing/all-in-one:1.6
 
 # 이전에 실행한적이 있다면 
 $docker start jaeger
+
+#mysql 실행
+$docker start mysql56
 
 # sayHello 호출
 $ curl http://localhost:8080/sayHello/Gru

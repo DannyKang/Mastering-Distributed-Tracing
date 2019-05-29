@@ -1,8 +1,8 @@
 ## Exeicise 3 - Tracing Functions and passing context
 
- - [각 function에 Trace를 추가하기](#step1--각-function에-Trace를-추가하기)
- - [하나의 Trace에 여러 span을 연계하기](#step2--하나의-Trace에-여러-span을-연계하기)
- - [동일한 프로세스내에서 context 전파하기(propagate)](#step3--동일한-프로세스내에서-context-전파하기) 
+ - [각 function에 Trace를 추가하기](#step-1--각-function에-Trace를-추가하기)
+ - [하나의 Trace에 여러 span을 연계하기](#step-2--하나의-Trace에-여러-span을-연계하기)
+ - [동일한 프로세스내에서 context 전파하기(propagate)](#step-3--동일한-프로세스내에서-context-전파하기) 
 
 ### Step 1 : 각 function에 Trace를 추가하기
 이제 database에 데이터를 읽어오는 "formatting"과 "greeting" 함수에 span을 추가한다. 
@@ -28,7 +28,7 @@ private String formatGreeting(Person person) {
 }
 
 ```
-결과 확인 : 3개의 Trace가 생성 
+결과 확인를 확인해 보면 3개의 개별 Trace가 생성된다.  
 ![](../../resources/images/ch04-ex03-1.png)
 
 
@@ -38,11 +38,11 @@ Spring Boot를 실행한 console에서 각 span을 Reporting 하는 정보를 �
 ![](../../resources/images/ch04-ex03-2.png)
 
 이것은 `traceid:span-id:parent-id:flags` 형식으로 표시된다. 
-첫번째에 나오는 traceid가 각각인것 확인할 수 있다. 이는 하나의 request에 따른 span들을 모아서 연관분석을 해야 하는 요구사항에 반한다. 따라서 span간의 관계를 OpenTracing에서는 `span references`라고 한다. 
+각 로그의 제일 앞부분에 나온느 traceid가 제각각인것을 확인할 수 있다. 이는 각 request 마다의 span을 모아서 연관분석을 하고자 하는 방향과 맞지 않다. OpenTracing에서는 이런 span간의 연관관계를 `span references`라고 하며 `child-of`와 `follow-from`유형으로 span간의 연관 관계를 나타낸다. 
 
-아래의 두가지 유형이 모두 부모자식, happens-before 관계를 동일하지만 
+이 두가지 유형은 모두 부모자식 즉 span간의 선후관계를 나타내지만
 
- - `child-of` : 이전에 일어난 span의 결과에 의존적이다. 
+ - `child-of` : 이전에 일어난 span의 결과에 종속적인 관계  
  - `follow-from` : fire-and-forget, producer-consumer pattern과 같이 언제 처리될지 모르는 관계
 
 ![](../../resources/images/ch04-span.png))
